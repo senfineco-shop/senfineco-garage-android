@@ -21,9 +21,11 @@ artifacts on the run page (Actions → the run → Artifacts):
 
 ## Signing
 
-`app/keystore/upload.jks` is the **upload key** (password in `app/keystore/keystore.properties`).
-Google Play App Signing holds the real app signing key, so this key can be reset from
-Play Console if it is ever lost. Keep this repository private.
+The **upload key** is NOT stored in this repository. It lives in one repository secret,
+`UPLOAD_KEYSTORE_BUNDLE` (base64 of a tar.gz holding `keystore/upload.jks` +
+`keystore/keystore.properties`), which the workflow restores into `app/keystore/` at build time.
+Google Play App Signing holds the real app signing key, so the upload key can be reset from
+Play Console if it is ever lost. Keep a copy of the key files somewhere safe.
 
 ## Change the site address
 

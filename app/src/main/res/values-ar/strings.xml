@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">سنفينكو جراج</string>
+    <string name="offline_title">لا يوجد اتصال</string>
+    <string name="offline_message">تطبيق سنفينكو جراج يحتاج إلى إنترنت. تأكد من الواي فاي أو بيانات الجوال ثم أعد المحاولة.</string>
+    <string name="retry">إعادة المحاولة</string>
+    <string name="choose_file">اختر صورة أو ملفاً</string>
+    <string name="no_app_for_link">لا يوجد تطبيق لفتح هذا الرابط</string>
+    <string name="camera_permission_needed">يلزم السماح بالكاميرا لالتقاط صورة السيارة</string>
+</resources>

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="brand_orange">#F97316</color>
+    <color name="brand_orange_dark">#C2410C</color>
+    <color name="brand_bg">#FFF7ED</color>
+    <color name="ic_launcher_background">#F97316</color>
+    <color name="text_dark">#1F2937</color>
+    <color name="text_muted">#6B7280</color>
+</resources>

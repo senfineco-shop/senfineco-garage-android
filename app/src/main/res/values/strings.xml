@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Senfineco Garage</string>
+    <string name="offline_title">No connection</string>
+    <string name="offline_message">Senfineco Garage needs internet. Check Wi-Fi or mobile data, then try again.</string>
+    <string name="retry">Try again</string>
+    <string name="choose_file">Choose photo or file</string>
+    <string name="no_app_for_link">No app found to open this link</string>
+    <string name="camera_permission_needed">Camera permission is needed to take the vehicle photo</string>
+</resources>

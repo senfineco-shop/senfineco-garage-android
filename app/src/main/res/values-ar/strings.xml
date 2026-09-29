@@ -7,4 +7,8 @@
     <string name="choose_file">اختر صورة أو ملفاً</string>
     <string name="no_app_for_link">لا يوجد تطبيق لفتح هذا الرابط</string>
     <string name="camera_permission_needed">يلزم السماح بالكاميرا لالتقاط صورة السيارة</string>
+    <string name="update_available">يتوفر إصدار جديد %1$s</string>
+    <string name="update_now">تحديث</string>
+    <string name="update_later">لاحقاً</string>
+    <string name="update_downloading_hint">جارٍ التنزيل في المتصفح… عند الانتهاء افتح الملف واضغط تثبيت.</string>
 </resources>

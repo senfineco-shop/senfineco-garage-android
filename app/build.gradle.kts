@@ -57,5 +57,7 @@ android {
 }
 
 dependencies {
+    // Aligns kotlin-stdlib / stdlib-jdk7 / stdlib-jdk8 versions (fixes "Duplicate class kotlin.io.path...")
+    implementation(platform("org.jetbrains.kotlin:kotlin-bom:1.9.24"))
     implementation("androidx.appcompat:appcompat:1.7.0")
 }

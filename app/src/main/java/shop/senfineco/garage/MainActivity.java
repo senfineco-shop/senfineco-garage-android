@@ -68,11 +68,15 @@ public class MainActivity extends AppCompatActivity {
     private static final int REQ_CAMERA_PERMISSION = 2001;
 
     private FrameLayout root;
+    private LinearLayout column;
+    private LinearLayout updateBanner;
+    private TextView updateText;
     private WebView webView;
     private ProgressBar progressBar;
     private LinearLayout offlineView;
 
     private boolean mainFrameFailed = false;
+    private long offeredUpdateCode = 0;
 
     private ValueCallback<Uri[]> filePathCallback;
     private Uri cameraOutputUri;
@@ -97,10 +101,21 @@ public class MainActivity extends AppCompatActivity {
             return WindowInsetsCompat.CONSUMED;
         });
 
+        // Vertical column: [update banner (hidden until a newer build exists)] + [web view].
+        column = new LinearLayout(this);
+        column.setOrientation(LinearLayout.VERTICAL);
+        root.addView(column, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+        updateBanner = buildUpdateBanner();
+        updateBanner.setVisibility(View.GONE);
+        column.addView(updateBanner, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
         webView = new WebView(this);
         webView.setBackgroundColor(ContextCompat.getColor(this, R.color.brand_bg));
-        root.addView(webView, new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        column.addView(webView, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
 
         progressBar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
         progressBar.setMax(100);
@@ -138,6 +153,9 @@ public class MainActivity extends AppCompatActivity {
         } else {
             webView.loadUrl(HOME_URL);
         }
+
+        // Newer build published on GitHub? (skipped automatically for Play Store installs)
+        UpdateChecker.check(this, true, this::showUpdateBanner);
     }
 
     private void configureWebView() {
@@ -468,6 +486,62 @@ public class MainActivity extends AppCompatActivity {
         webView.setVisibility(offline ? View.INVISIBLE : View.VISIBLE);
     }
 
+    // ---------------------------------------------------------------- in-app update banner
+
+    private LinearLayout buildUpdateBanner() {
+        LinearLayout bar = new LinearLayout(this);
+        bar.setOrientation(LinearLayout.HORIZONTAL);
+        bar.setGravity(Gravity.CENTER_VERTICAL);
+        bar.setBackgroundColor(ContextCompat.getColor(this, R.color.brand_orange_dark));
+        bar.setPadding(dp(14), dp(10), dp(14), dp(10));
+
+        updateText = new TextView(this);
+        updateText.setTextColor(Color.WHITE);
+        updateText.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        updateText.setTypeface(Typeface.DEFAULT_BOLD);
+        bar.addView(updateText, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        Button later = new Button(this);
+        later.setText(R.string.update_later);
+        later.setAllCaps(false);
+        later.setTextColor(Color.WHITE);
+        later.setBackgroundColor(Color.TRANSPARENT);
+        later.setMinWidth(0);
+        later.setMinimumWidth(0);
+        later.setPadding(dp(10), dp(6), dp(10), dp(6));
+        later.setOnClickListener(v -> {
+            if (offeredUpdateCode > 0) UpdateChecker.snooze(this, offeredUpdateCode);
+            updateBanner.setVisibility(View.GONE);
+        });
+        bar.addView(later);
+
+        Button update = new Button(this);
+        update.setText(R.string.update_now);
+        update.setAllCaps(false);
+        update.setTextColor(ContextCompat.getColor(this, R.color.brand_orange_dark));
+        update.setBackgroundColor(Color.WHITE);
+        update.setMinWidth(0);
+        update.setMinimumWidth(0);
+        update.setPadding(dp(16), dp(6), dp(16), dp(6));
+        LinearLayout.LayoutParams ulp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        ulp.setMarginStart(dp(6));
+        update.setLayoutParams(ulp);
+        update.setOnClickListener(v -> {
+            Toast.makeText(this, R.string.update_downloading_hint, Toast.LENGTH_LONG).show();
+            openExternal(Uri.parse(UpdateChecker.APK_URL)); // browser downloads → tap to install
+        });
+        bar.addView(update);
+        return bar;
+    }
+
+    private void showUpdateBanner(long latestCode, String latestName) {
+        if (isFinishing() || isDestroyed()) return;
+        offeredUpdateCode = latestCode;
+        updateText.setText(getString(R.string.update_available, latestName));
+        updateBanner.setVisibility(View.VISIBLE);
+    }
+
     // ---------------------------------------------------------------- lifecycle
 
     @Override
@@ -487,6 +561,8 @@ public class MainActivity extends AppCompatActivity {
     protected void onResume() {
         super.onResume();
         webView.onResume();
+        // Tablets stay open for days: re-check quietly (rate-limited inside UpdateChecker).
+        UpdateChecker.check(this, false, this::showUpdateBanner);
     }
 
     @Override

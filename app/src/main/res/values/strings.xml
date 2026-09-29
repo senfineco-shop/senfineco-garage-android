@@ -7,4 +7,8 @@
     <string name="choose_file">Choose photo or file</string>
     <string name="no_app_for_link">No app found to open this link</string>
     <string name="camera_permission_needed">Camera permission is needed to take the vehicle photo</string>
+    <string name="update_available">New version %1$s is ready</string>
+    <string name="update_now">Update</string>
+    <string name="update_later">Later</string>
+    <string name="update_downloading_hint">Downloading in the browser… open the file when it finishes and tap Install.</string>
 </resources>

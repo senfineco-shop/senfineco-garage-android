@@ -5,8 +5,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# contents: write → the job may publish GitHub Releases (fixed download link)
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -14,6 +15,7 @@ jobs:
     timeout-minutes: 30
     env:
       VERSION_CODE: ${{ github.run_number }}
+      VERSION_NAME: 1.0.${{ github.run_number }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -52,23 +54,63 @@ jobs:
       - name: Build release APK (for direct install on tablets)
         run: gradle :app:assembleRelease --no-daemon
 
-      - name: Rename outputs
+      - name: Collect outputs
         run: |
           mkdir -p out
           cp app/build/outputs/bundle/release/app-release.aab "out/senfineco-garage-v${VERSION_CODE}.aab"
           cp app/build/outputs/apk/release/app-release.apk "out/senfineco-garage-v${VERSION_CODE}.apk"
+          # Fixed names → the "latest" download links never change
+          cp "out/senfineco-garage-v${VERSION_CODE}.apk" out/senfineco-garage.apk
+          cp "out/senfineco-garage-v${VERSION_CODE}.aab" out/senfineco-garage.aab
+          cat > out/version.json <<EOF
+          {
+            "versionCode": ${VERSION_CODE},
+            "versionName": "${VERSION_NAME}",
+            "apk": "https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/senfineco-garage.apk",
+            "builtAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "commit": "${GITHUB_SHA}"
+          }
+          EOF
+          cat out/version.json
           ls -la out
 
       - name: Upload AAB (Google Play)
         uses: actions/upload-artifact@v4
         with:
           name: senfineco-garage-aab-v${{ github.run_number }}
-          path: out/*.aab
+          path: out/senfineco-garage-v*.aab
           if-no-files-found: error
 
       - name: Upload APK (direct install)
         uses: actions/upload-artifact@v4
         with:
           name: senfineco-garage-apk-v${{ github.run_number }}
-          path: out/*.apk
+          path: out/senfineco-garage-v*.apk
           if-no-files-found: error
+
+      # Publishes release v<N> and marks it "Latest", so these links always serve the newest build:
+      #   https://github.com/<repo>/releases/latest/download/senfineco-garage.apk
+      #   https://github.com/<repo>/releases/latest/download/version.json
+      - name: Publish GitHub Release (fixed download link)
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="v${VERSION_CODE}"
+          # A re-run of the same run number: replace the previous release + tag
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release delete "$TAG" --yes --cleanup-tag
+          fi
+          NOTES="$(printf 'Senfineco Garage %s (build %s)\n\nFixed download link (always the newest build):\nhttps://github.com/%s/releases/latest/download/senfineco-garage.apk\n\nCommit: %s' \
+            "$VERSION_NAME" "$VERSION_CODE" "$GITHUB_REPOSITORY" "$GITHUB_SHA")"
+          gh release create "$TAG" \
+            out/senfineco-garage.apk \
+            out/senfineco-garage.aab \
+            out/version.json \
+            "out/senfineco-garage-v${VERSION_CODE}.apk" \
+            "out/senfineco-garage-v${VERSION_CODE}.aab" \
+            --target "$GITHUB_SHA" \
+            --title "Senfineco Garage ${VERSION_NAME} (build ${VERSION_CODE})" \
+            --notes "$NOTES" \
+            --latest
+          echo "Fixed APK link: https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/senfineco-garage.apk"

@@ -19,6 +19,22 @@ artifacts on the run page (Actions → the run → Artifacts):
 
 `versionCode` = the GitHub run number, so every build is newer than the previous one.
 
+## Fixed download link (tablets / workers)
+
+Every successful build is also published as a GitHub Release (`v<N>`, marked *Latest*) with
+fixed asset names, so these links never change:
+
+* APK (always the newest build): **https://github.com/senfineco-shop/senfineco-garage-android/releases/latest/download/senfineco-garage.apk**
+* Version info: https://github.com/senfineco-shop/senfineco-garage-android/releases/latest/download/version.json
+* AAB for Play: https://github.com/senfineco-shop/senfineco-garage-android/releases/latest/download/senfineco-garage.aab
+
+The app itself checks `version.json` on start (at most every 3 hours) and shows an
+"Update" banner when a newer build exists — tapping it downloads the APK from the fixed link.
+The check is skipped for installs that came from Google Play (Play delivers those updates).
+
+Changes made on the website (garage.senfineco.shop) need **no** app update at all — the app
+always shows the live site.
+
 ## Signing
 
 The **upload key** is NOT stored in this repository. It lives in one repository secret,
@@ -34,4 +50,10 @@ Play Console if it is ever lost. Keep a copy of the key files somewhere safe.
 ---
 
 تطبيق أندرويد خفيف يفتح garage.senfineco.shop فقط (دخول العمال برقم الجوال وكلمة السر).
-كل دفعة (push) إلى main تبني ملف aab و apk تلقائياً في صفحة Actions.
+كل دفعة (push) إلى main تبني ملف aab و apk تلقائياً في صفحة Actions وتنشر إصداراً (Release).
+
+الرابط الثابت لتحميل أحدث نسخة للعمال (لا يتغير أبداً):
+https://github.com/senfineco-shop/senfineco-garage-android/releases/latest/download/senfineco-garage.apk
+
+التطبيق يفحص بنفسه وجود نسخة أحدث ويعرض شريط «تحديث» في الأعلى؛ أما تعديلات الموقع نفسه
+فتظهر للعامل فوراً بدون أي تحديث للتطبيق.

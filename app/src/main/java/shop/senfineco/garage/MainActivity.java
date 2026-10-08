@@ -10,12 +10,16 @@ import android.graphics.Color;
 import android.graphics.Typeface;
 import android.net.Uri;
 import android.os.Bundle;
+import android.print.PrintAttributes;
+import android.print.PrintDocumentAdapter;
+import android.print.PrintManager;
 import android.provider.MediaStore;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.webkit.CookieManager;
+import android.webkit.JavascriptInterface;
 import android.webkit.PermissionRequest;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
@@ -58,6 +62,8 @@ import java.util.Locale;
  *   mandatory vehicle photo with the camera.
  * - Keeps cookies (30-day worker session), survives rotation, handles the back button
  *   and shows a friendly offline page with retry.
+ * - Makes the site's print buttons work: Android WebView ignores window.print(), so the
+ *   page's print() calls are routed to the Android print service (printer or Save as PDF).
  */
 public class MainActivity extends AppCompatActivity {
 
@@ -66,6 +72,33 @@ public class MainActivity extends AppCompatActivity {
 
     private static final int REQ_FILE_CHOOSER = 1001;
     private static final int REQ_CAMERA_PERMISSION = 2001;
+
+    /** Name of the JS bridge the print hook calls (window.SenfinecoPrint). */
+    private static final String PRINT_BRIDGE = "SenfinecoPrint";
+
+    /**
+     * Replaces window.print() — a no-op inside Android WebView — with calls to the print bridge.
+     * Also covers the common "hidden iframe" pattern (iframe.contentWindow.print()): the iframe's
+     * HTML is handed over and printed on its own, so only the invoice / job card is printed.
+     */
+    private static final String PRINT_HOOK_JS =
+            "(function(){"
+            + "if(window.__senfPrintHooked)return;"
+            + "function hook(w){try{"
+            + "if(!w||w.__senfPrintHooked)return;"
+            + "w.__senfPrintHooked=true;"
+            + "w.print=function(){"
+            + "if(w===window){" + PRINT_BRIDGE + ".printPage(document.title||'');}"
+            + "else{" + PRINT_BRIDGE + ".printHtml('<!DOCTYPE html>'+w.document.documentElement.outerHTML,"
+            + "String(w.location.href),w.document.title||document.title||'');}"
+            + "};"
+            + "}catch(e){}}"
+            + "hook(window);"
+            + "var d=Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype,'contentWindow');"
+            + "if(d&&d.get){Object.defineProperty(HTMLIFrameElement.prototype,'contentWindow',{"
+            + "configurable:true,enumerable:d.enumerable,"
+            + "get:function(){var w=d.get.call(this);hook(w);return w;}});}"
+            + "})();";
 
     private FrameLayout root;
     private LinearLayout column;
@@ -82,6 +115,9 @@ public class MainActivity extends AppCompatActivity {
     private Uri cameraOutputUri;
     private WebChromeClient.FileChooserParams pendingChooserParams;
     private PermissionRequest pendingWebPermission;
+
+    /** Off-screen view used to print an iframe's content; kept referenced until printing ends. */
+    private WebView printView;
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -181,6 +217,8 @@ public class MainActivity extends AppCompatActivity {
         cm.setAcceptCookie(true);
         cm.setAcceptThirdPartyCookies(webView, true);
 
+        webView.addJavascriptInterface(new PrintBridge(), PRINT_BRIDGE);
+
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
@@ -199,6 +237,9 @@ public class MainActivity extends AppCompatActivity {
                 progressBar.setVisibility(View.GONE);
                 if (!mainFrameFailed) {
                     showOffline(false);
+                }
+                if (isAppUrl(url)) {
+                    view.evaluateJavascript(PRINT_HOOK_JS, null);
                 }
             }
 
@@ -297,6 +338,74 @@ public class MainActivity extends AppCompatActivity {
             startActivity(intent);
         } catch (ActivityNotFoundException e) {
             Toast.makeText(this, R.string.no_app_for_link, Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private static boolean isAppUrl(@Nullable String url) {
+        if (url == null) return false;
+        Uri u = Uri.parse(url);
+        return "https".equalsIgnoreCase(u.getScheme()) && APP_HOST.equalsIgnoreCase(u.getHost());
+    }
+
+    // ---------------------------------------------------------------- printing
+
+    /** Called from the page's JavaScript (see PRINT_HOOK_JS) on a background thread. */
+    private final class PrintBridge {
+        @JavascriptInterface
+        public void printPage(String title) {
+            runOnUiThread(() -> {
+                if (!isAppUrl(webView.getUrl())) return;
+                printWebView(webView, title);
+            });
+        }
+
+        @JavascriptInterface
+        public void printHtml(String html, String frameUrl, String title) {
+            runOnUiThread(() -> {
+                if (!isAppUrl(webView.getUrl()) || html == null) return;
+                printDocument(html, isAppUrl(frameUrl) ? frameUrl : HOME_URL, title);
+            });
+        }
+    }
+
+    /** Loads the HTML into an off-screen WebView (no JS) and prints it once it has loaded. */
+    private void printDocument(String html, String baseUrl, String title) {
+        if (printView != null) printView.destroy();
+        WebView view = new WebView(this);
+        view.getSettings().setJavaScriptEnabled(false);
+        view.setWebViewClient(new WebViewClient() {
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest request) {
+                return true; // printing only — no navigation
+            }
+
+            @Override
+            public void onPageFinished(WebView v, String url) {
+                if (v != printView || v.getTag() != null) return;
+                v.setTag(Boolean.TRUE); // print once
+                printWebView(v, title);
+            }
+        });
+        printView = view;
+        view.loadDataWithBaseURL(baseUrl, html, "text/html", "UTF-8", null);
+    }
+
+    private void printWebView(WebView view, @Nullable String title) {
+        if (isFinishing() || isDestroyed()) return;
+        PrintManager pm = (PrintManager) getSystemService(PRINT_SERVICE);
+        if (pm == null) {
+            Toast.makeText(this, R.string.print_failed, Toast.LENGTH_LONG).show();
+            return;
+        }
+        String jobName = (title == null || title.trim().isEmpty())
+                ? getString(R.string.app_name) : title.trim();
+        try {
+            PrintDocumentAdapter adapter = view.createPrintDocumentAdapter(jobName);
+            pm.print(jobName, adapter, new PrintAttributes.Builder()
+                    .setMediaSize(PrintAttributes.MediaSize.ISO_A4)
+                    .build());
+        } catch (RuntimeException e) {
+            Toast.makeText(this, R.string.print_failed, Toast.LENGTH_LONG).show();
         }
     }
 
@@ -567,6 +676,10 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     protected void onDestroy() {
+        if (printView != null) {
+            printView.destroy();
+            printView = null;
+        }
         if (webView != null) {
             root.removeView(webView);
             webView.destroy();

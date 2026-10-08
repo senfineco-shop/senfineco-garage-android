@@ -11,4 +11,5 @@
     <string name="update_now">Update</string>
     <string name="update_later">Later</string>
     <string name="update_downloading_hint">Downloading in the browser… open the file when it finishes and tap Install.</string>
+    <string name="print_failed">Printing is not available on this device</string>
 </resources>

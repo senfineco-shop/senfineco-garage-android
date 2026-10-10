@@ -11,4 +11,5 @@
     <string name="update_now">تحديث</string>
     <string name="update_later">لاحقاً</string>
     <string name="update_downloading_hint">جارٍ التنزيل في المتصفح… عند الانتهاء افتح الملف واضغط تثبيت.</string>
+    <string name="print_failed">الطباعة غير متاحة على هذا الجهاز</string>
 </resources>

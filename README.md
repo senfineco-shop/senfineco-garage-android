@@ -6,6 +6,8 @@ version of the Senfineco Garage app (phone + password, no OTP, no Cloudflare Acc
 * Package name: `shop.senfineco.garage`
 * Only `garage.senfineco.shop` opens inside the app; WhatsApp / phone / other links open outside.
 * Camera + gallery file chooser for the mandatory vehicle photo in the reception inspection.
+* Print buttons on the site work: `window.print()` (also from a hidden iframe) opens the Android
+  print dialog (Wi-Fi printer or *Save as PDF*).
 * Cookies are kept (30-day worker session), rotation and the back button are handled,
   and an offline page with "Try again" is shown when there is no internet.
 

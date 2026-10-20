@@ -92,7 +92,8 @@ jobs:
       #   https://github.com/<repo>/releases/latest/download/senfineco-garage.apk
       #   https://github.com/<repo>/releases/latest/download/version.json
       - name: Publish GitHub Release (fixed download link)
-        if: github.event_name != 'pull_request'
+        # only builds of main reach the tablets; a test build of another branch keeps its APK as a run artifact
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

@@ -8,8 +8,13 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.print.PrintAttributes;
 import android.print.PrintDocumentAdapter;
 import android.print.PrintManager;
@@ -64,6 +69,11 @@ import java.util.Locale;
  *   and shows a friendly offline page with retry.
  * - Makes the site's print buttons work: Android WebView ignores window.print(), so the
  *   page's print() calls are routed to the Android print service (printer or Save as PDF).
+ * - Reconnects by itself (Oct 2026, the owner: "after the screen is locked and touched again the Jalan tablet shows
+ *   No connection although the internet never dropped"): when the tablet wakes, Wi-Fi needs a moment and a page load in
+ *   that moment fails. The offline page now retries on its own — at once when Android reports a network, when the app
+ *   comes back to the screen, and every few seconds (1.5 s, 3 s, 5 s, 8 s, then every 15 s) — so nobody has to press
+ *   "Try again".
  */
 public class MainActivity extends AppCompatActivity {
 
@@ -110,6 +120,21 @@ public class MainActivity extends AppCompatActivity {
 
     private boolean mainFrameFailed = false;
     private long offeredUpdateCode = 0;
+
+    // ---- automatic reconnect (see the class comment)
+    private static final long[] RETRY_DELAYS_MS = {1500, 3000, 5000, 8000, 15000};
+    private final Handler handler = new Handler(Looper.getMainLooper());
+    private boolean resumed = false;
+    private int retryAttempt = 0;
+    private ConnectivityManager.NetworkCallback networkCallback;
+    private final Runnable autoRetry = () -> {
+        if (!resumed || offlineView == null || offlineView.getVisibility() != View.VISIBLE) return;
+        if (isOnline()) {
+            reloadAfterError();
+        } else {
+            scheduleRetry();
+        }
+    };
 
     private ValueCallback<Uri[]> filePathCallback;
     private Uri cameraOutputUri;
@@ -237,6 +262,8 @@ public class MainActivity extends AppCompatActivity {
                 progressBar.setVisibility(View.GONE);
                 if (!mainFrameFailed) {
                     showOffline(false);
+                    retryAttempt = 0;
+                    handler.removeCallbacks(autoRetry);
                 }
                 if (isAppUrl(url)) {
                     view.evaluateJavascript(PRINT_HOOK_JS, null);
@@ -248,6 +275,7 @@ public class MainActivity extends AppCompatActivity {
                 if (request.isForMainFrame()) {
                     mainFrameFailed = true;
                     showOffline(true);
+                    scheduleRetry(); // usually Wi-Fi waking up after the screen was locked
                 }
             }
         });
@@ -570,6 +598,14 @@ public class MainActivity extends AppCompatActivity {
         msg.setGravity(Gravity.CENTER);
         box.addView(msg);
 
+        TextView auto = new TextView(this);
+        auto.setText(R.string.offline_auto);
+        auto.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        auto.setTextColor(ContextCompat.getColor(this, R.color.text_muted));
+        auto.setGravity(Gravity.CENTER);
+        auto.setPadding(0, dp(10), 0, 0);
+        box.addView(auto);
+
         Button retry = new Button(this);
         retry.setText(R.string.retry);
         retry.setAllCaps(false);
@@ -582,6 +618,8 @@ public class MainActivity extends AppCompatActivity {
         retry.setPadding(dp(32), dp(12), dp(32), dp(12));
         retry.setOnClickListener(v -> {
             mainFrameFailed = false;
+            retryAttempt = 0;
+            handler.removeCallbacks(autoRetry);
             showOffline(false);
             String current = webView.getUrl();
             webView.loadUrl(current != null && current.startsWith("https://" + APP_HOST) ? current : HOME_URL);
@@ -593,6 +631,73 @@ public class MainActivity extends AppCompatActivity {
     private void showOffline(boolean offline) {
         offlineView.setVisibility(offline ? View.VISIBLE : View.GONE);
         webView.setVisibility(offline ? View.INVISIBLE : View.VISIBLE);
+    }
+
+    // ---------------------------------------------------------------- automatic reconnect
+
+    /** Next quiet retry while the offline page is shown and the app is on screen. */
+    private void scheduleRetry() {
+        handler.removeCallbacks(autoRetry);
+        if (!resumed) return; // retried in onResume
+        long delay = RETRY_DELAYS_MS[Math.min(retryAttempt, RETRY_DELAYS_MS.length - 1)];
+        retryAttempt++;
+        handler.postDelayed(autoRetry, delay);
+    }
+
+    /** Retry soon (a network just appeared, or the app came back to the screen). */
+    private void retrySoon(long delayMs) {
+        if (offlineView == null || offlineView.getVisibility() != View.VISIBLE) return;
+        retryAttempt = 0;
+        handler.removeCallbacks(autoRetry);
+        handler.postDelayed(autoRetry, delayMs);
+    }
+
+    /** Loads the page again; the offline page stays until it has loaded (no flash of an error page). */
+    private void reloadAfterError() {
+        mainFrameFailed = false;
+        String current = webView.getUrl();
+        webView.loadUrl(current != null && current.startsWith("https://" + APP_HOST) ? current : HOME_URL);
+    }
+
+    private boolean isOnline() {
+        try {
+            ConnectivityManager cm = (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+            if (cm == null) return true;
+            Network n = cm.getActiveNetwork();
+            if (n == null) return false;
+            NetworkCapabilities caps = cm.getNetworkCapabilities(n);
+            return caps != null && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
+        } catch (RuntimeException e) {
+            return true; // unknown → just try
+        }
+    }
+
+    private void watchNetwork() {
+        if (networkCallback != null) return;
+        try {
+            ConnectivityManager cm = (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+            if (cm == null) return;
+            networkCallback = new ConnectivityManager.NetworkCallback() {
+                @Override
+                public void onAvailable(@NonNull Network network) {
+                    handler.post(() -> { if (resumed) retrySoon(700); });
+                }
+            };
+            cm.registerDefaultNetworkCallback(networkCallback);
+        } catch (RuntimeException e) {
+            networkCallback = null; // the timed retries still work
+        }
+    }
+
+    private void unwatchNetwork() {
+        if (networkCallback == null) return;
+        try {
+            ConnectivityManager cm = (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+            if (cm != null) cm.unregisterNetworkCallback(networkCallback);
+        } catch (RuntimeException e) {
+            // already gone
+        }
+        networkCallback = null;
     }
 
     // ---------------------------------------------------------------- in-app update banner
@@ -662,6 +767,9 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onPause() {
         super.onPause();
+        resumed = false;
+        handler.removeCallbacks(autoRetry);
+        unwatchNetwork();
         CookieManager.getInstance().flush();
         webView.onPause();
     }
@@ -669,13 +777,18 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
+        resumed = true;
         webView.onResume();
+        watchNetwork();
+        retrySoon(500); // the screen was locked and the page could not load meanwhile → try again at once
         // Tablets stay open for days: re-check quietly (rate-limited inside UpdateChecker).
         UpdateChecker.check(this, false, this::showUpdateBanner);
     }
 
     @Override
     protected void onDestroy() {
+        handler.removeCallbacks(autoRetry);
+        unwatchNetwork();
         if (printView != null) {
             printView.destroy();
             printView = null;

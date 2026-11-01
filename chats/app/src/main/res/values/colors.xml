@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- the staff site's theme colour (#FD9E46) -->
+    <color name="colorPrimary">#FD9E46</color>
+    <color name="ic_launcher_background">#FD9E46</color>
+    <color name="navigationColor">#FFFFFF</color>
+    <color name="navigationDividerColor">#E9EDEF</color>
+</resources>

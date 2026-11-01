@@ -1,0 +1,10 @@
+.gradle/
+build/
+app/build/
+local.properties
+.idea/
+*.iml
+.DS_Store
+
+# signing key lives in GitHub Secrets (UPLOAD_KEYSTORE_BUNDLE), never in the repo
+app/keystore/

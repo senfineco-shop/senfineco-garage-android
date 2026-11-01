@@ -1,0 +1,103 @@
+name: Build Senfineco Chats (AAB + APK)
+
+# The staff chat app «محادثات سنفينكو» (shop.senfineco.chats) lives in chats/ of this repo so it can use the same
+# upload key (secret UPLOAD_KEYSTORE_BUNDLE). It never touches the Garage build (build.yml) or its "Latest" release:
+# its releases are tagged chats-v<N> / chats-latest and are never marked Latest.
+# Commits to chats/ carry [skip ci] (so the Garage workflow does not run); start this one with "Run workflow".
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "chats/**"
+      - ".github/workflows/chats.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: chats
+    env:
+      VERSION_CODE: ${{ github.run_number }}
+      VERSION_NAME: 1.0.${{ github.run_number }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: "platform-tools platforms;android-36 build-tools;36.0.0"
+
+      - name: Set up Gradle 8.13
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+
+      - name: Restore upload keystore (same secret as the Garage app)
+        env:
+          BUNDLE: ${{ secrets.UPLOAD_KEYSTORE_BUNDLE }}
+        run: |
+          if [ -z "$BUNDLE" ]; then
+            echo "::error::Repository secret UPLOAD_KEYSTORE_BUNDLE is missing."
+            exit 1
+          fi
+          echo "$BUNDLE" | base64 -d | tar xz -C app/
+          test -f app/keystore/upload.jks && test -f app/keystore/keystore.properties
+          echo "keystore restored"
+
+      - name: Build release AAB (Google Play)
+        run: gradle :app:bundleRelease --no-daemon --stacktrace
+
+      - name: Build release APK (direct install)
+        run: gradle :app:assembleRelease --no-daemon
+
+      - name: Collect outputs
+        run: |
+          mkdir -p out
+          cp app/build/outputs/bundle/release/app-release.aab "out/senfineco-chats-v${VERSION_CODE}.aab"
+          cp app/build/outputs/apk/release/app-release.apk "out/senfineco-chats-v${VERSION_CODE}.apk"
+          cp "out/senfineco-chats-v${VERSION_CODE}.aab" out/senfineco-chats.aab
+          cp "out/senfineco-chats-v${VERSION_CODE}.apk" out/senfineco-chats.apk
+          # SHA-256 of the upload certificate (for bot.senfineco.shop/.well-known/assetlinks.json)
+          keytool -printcert -jarfile "out/senfineco-chats-v${VERSION_CODE}.apk" | tee out/upload-cert.txt || true
+          ls -la out
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: senfineco-chats-v${{ github.run_number }}
+          path: |
+            chats/out/senfineco-chats-v*.aab
+            chats/out/senfineco-chats-v*.apk
+            chats/out/upload-cert.txt
+          if-no-files-found: error
+
+      # Release chats-v<N> (and the moving chats-latest), never "Latest" — the Garage links stay on the Garage builds.
+      - name: Publish GitHub Release (not Latest)
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="chats-v${VERSION_CODE}"
+          if gh release view "$TAG" >/dev/null 2>&1; then gh release delete "$TAG" --yes --cleanup-tag; fi
+          gh release create "$TAG" out/senfineco-chats.aab out/senfineco-chats.apk out/upload-cert.txt \
+            "out/senfineco-chats-v${VERSION_CODE}.aab" "out/senfineco-chats-v${VERSION_CODE}.apk" \
+            --target "$GITHUB_SHA" --title "Senfineco Chats ${VERSION_NAME} (build ${VERSION_CODE})" \
+            --notes "محادثات سنفينكو — build ${VERSION_CODE}" --prerelease --latest=false
+          if gh release view chats-latest >/dev/null 2>&1; then gh release delete chats-latest --yes --cleanup-tag; fi
+          gh release create chats-latest out/senfineco-chats.apk out/senfineco-chats.aab \
+            --target "$GITHUB_SHA" --title "Senfineco Chats — newest build" \
+            --notes "Fixed link: https://github.com/${GITHUB_REPOSITORY}/releases/download/chats-latest/senfineco-chats.apk" \
+            --prerelease --latest=false
